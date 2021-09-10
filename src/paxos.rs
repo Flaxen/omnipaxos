@@ -60,7 +60,6 @@ where
     latest_accepted_meta: Option<(R, usize)>,
     outgoing: Vec<Message<R>>,
     num_nodes: usize,
-    disconnected_peers: Vec<u64>,
 }
 
 impl<R, S, P> Paxos<R, S, P>
@@ -134,7 +133,6 @@ where
             outgoing: Vec::with_capacity(BUFFER_SIZE),
             num_nodes,
             // log,
-            disconnected_peers: vec![],
         };
         paxos.storage.set_promise(n_leader);
         paxos
@@ -283,23 +281,14 @@ where
         self.storage.stop_and_get_sequence()
     }
 
-    /// Handles a disconnection to another peer.
-    /// This should only be called if the underlying network implementation indicates that a connection has been dropped and some messages might have been lost.
-    pub fn connection_lost(&mut self, pid: u64) {
-        if self.state.0 == Role::Follower && self.leader == pid {
-            self.state = (Role::Follower, Phase::Recover);
-        }
-        self.disconnected_peers.push(pid);
-    }
-
     /// Handles re-establishing a connection to a previously disconnected peer.
     /// This should only be called if the underlying network implementation indicates that a connection has been re-established.
-    pub fn connection_reestablished(&mut self, pid: u64) {
-        self.disconnected_peers.retain(|p| p != &pid);
-        if self.state.1 == Phase::Recover && self.leader == pid {
-            self.outgoing
-                .push(Message::with(self.pid, pid, PaxosMsg::PrepareReq));
+    pub fn reconnected(&mut self, pid: u64) {
+        if self.leader == pid {
+            self.state = (Role::Follower, Phase::Recover);
         }
+        self.outgoing
+            .push(Message::with(self.pid, pid, PaxosMsg::PrepareReq));
     }
 
     fn propose_entry(&mut self, entry: Entry<R>) {
@@ -359,11 +348,6 @@ where
                 ));
             }
         } else {
-            if self.state.1 == Phase::Recover || self.disconnected_peers.contains(&leader_pid) {
-                self.disconnected_peers.retain(|pid| pid != &leader_pid);
-                self.outgoing
-                    .push(Message::with(self.pid, leader_pid, PaxosMsg::PrepareReq));
-            }
             self.state.0 = Role::Follower;
         }
     }
@@ -625,11 +609,12 @@ where
                 ..
             } = &self.max_promise_meta;
             let sync_idx = if cfg!(feature = "max_accsync") {
-                if (&prom.n_accepted, &prom.la) == (max_round, max_la)
-                    || (prom.n_accepted == self.max_promise_meta.n
-                        && prom.la < self.max_promise_meta.la)
-                {
-                    prom.la
+                if &prom.n_accepted == max_round {
+                    if &prom.la > max_la {
+                        *max_la
+                    } else {
+                        prom.la
+                    }
                 } else {
                     prom.ld
                 }
