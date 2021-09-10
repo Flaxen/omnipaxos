@@ -284,7 +284,9 @@ where
     /// Handles re-establishing a connection to a previously disconnected peer.
     /// This should only be called if the underlying network implementation indicates that a connection has been re-established.
     pub fn reconnected(&mut self, pid: u64) {
-        if self.leader == pid {
+        if pid == self.pid {
+            return;
+        } else if pid == self.leader {
             self.state = (Role::Follower, Phase::Recover);
         }
         self.outgoing
@@ -354,6 +356,8 @@ where
 
     fn handle_preparereq(&mut self, from: u64) {
         if self.state.0 == Role::Leader {
+            let idx = Self::get_idx_from_pid(from);
+            self.lds[idx] = None;
             let ld = self.storage.get_decided_len();
             let n_accepted = self.storage.get_accepted_round();
             let la = self.storage.get_sequence_len();
@@ -706,7 +710,7 @@ where
 
     /*** Follower ***/
     fn handle_prepare(&mut self, prep: Prepare<R>, from: u64) {
-        if self.storage.get_promise() < prep.n {
+        if self.storage.get_promise() <= prep.n {
             self.leader = from;
             self.storage.set_promise(prep.n.clone());
             self.state = (Role::Follower, Phase::Prepare);
@@ -726,7 +730,8 @@ where
     }
 
     fn handle_acceptsync(&mut self, accsync: AcceptSync<R>, from: u64) {
-        if self.state == (Role::Follower, Phase::Prepare) && self.storage.get_promise() == accsync.n
+        if self.storage.get_promise() == accsync.n
+            && self.state == (Role::Follower, Phase::Prepare)
         {
             self.storage.set_accepted_round(accsync.n.clone());
             let mut entries = accsync.entries;
@@ -778,7 +783,7 @@ where
     }
 
     fn handle_decide(&mut self, dec: Decide<R>) {
-        if self.storage.get_promise() == dec.n && self.state.1 != Phase::Recover {
+        if self.storage.get_promise() == dec.n && self.state.1 == Phase::Accept {
             self.storage.set_decided_len(dec.ld);
         }
     }
