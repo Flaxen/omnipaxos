@@ -634,6 +634,12 @@ where
                 prom.ld
             };
             let sfx = self.storage.get_suffix(sync_idx);
+            println!(
+                "Handling promise in accept phase: from: {}, sync_idx: {}, sfx_len: {}",
+                from,
+                sync_idx,
+                sfx.len()
+            );
             let acc_sync = AcceptSync::with(self.n_leader.clone(), sfx, sync_idx);
             let msg = Message::with(self.pid, from, PaxosMsg::AcceptSync(acc_sync));
             self.outgoing.push(msg);
@@ -749,6 +755,12 @@ where
             let la = self
                 .storage
                 .append_on_prefix(accsync.sync_idx, &mut entries);
+            println!(
+                "Got AccSync. sync_idx: {}, entries_len: {}, la: {}",
+                accsync.sync_idx,
+                entries.len(),
+                la
+            );
             self.state = (Role::Follower, Phase::Accept);
             #[cfg(feature = "latest_accepted")]
             {
@@ -781,20 +793,25 @@ where
     }
 
     fn handle_acceptdecide(&mut self, acc: AcceptDecide<R>) {
-        if self.storage.get_promise() == acc.n {
-            if let (Role::Follower, Phase::Accept) = self.state {
-                let mut entries = acc.entries;
-                self.accept_entries(acc.n, &mut entries);
-                // handle decide
-                if acc.ld > self.storage.get_decided_len() {
-                    self.storage.set_decided_len(acc.ld);
-                }
+        if self.storage.get_promise() == acc.n && self.state == (Role::Follower, Phase::Accept) {
+            let mut entries = acc.entries;
+            self.accept_entries(acc.n, &mut entries);
+            // handle decide
+            if acc.ld > self.storage.get_decided_len() {
+                self.storage.set_decided_len(acc.ld);
             }
         }
     }
 
     fn handle_decide(&mut self, dec: Decide<R>) {
         if self.storage.get_promise() == dec.n && self.state.1 == Phase::Accept {
+            if self.storage.get_sequence_len() < dec.ld {
+                println!(
+                    "Got longer decided than log: la: {}, ld: {}",
+                    self.storage.get_sequence_len(),
+                    dec.ld
+                );
+            }
             self.storage.set_decided_len(dec.ld);
         }
     }
