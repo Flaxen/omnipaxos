@@ -634,12 +634,6 @@ where
                 prom.ld
             };
             let sfx = self.storage.get_suffix(sync_idx);
-            println!(
-                "Handling promise in accept phase: from: {}, sync_idx: {}, sfx_len: {}",
-                from,
-                sync_idx,
-                sfx.len()
-            );
             let acc_sync = AcceptSync::with(self.n_leader.clone(), sfx, sync_idx);
             let msg = Message::with(self.pid, from, PaxosMsg::AcceptSync(acc_sync));
             self.outgoing.push(msg);
@@ -752,16 +746,9 @@ where
         {
             self.storage.set_accepted_round(accsync.n.clone());
             let mut entries = accsync.entries;
-            let entries_len = entries.len();
             let la = self
                 .storage
                 .append_on_prefix(accsync.sync_idx, &mut entries);
-            println!(
-                "Got AccSync. sync_idx: {}, entries_len: {}, la: {}",
-                accsync.sync_idx,
-                entries_len,
-                la
-            );
             self.state = (Role::Follower, Phase::Accept);
             #[cfg(feature = "latest_accepted")]
             {
@@ -799,13 +786,6 @@ where
             self.accept_entries(acc.n, &mut entries);
             // handle decide
             if acc.ld > self.storage.get_decided_len() {
-                if self.storage.get_sequence_len() < acc.ld {
-                    println!(
-                        "Got longer decided than log in AcceptDecide: la: {}, ld: {}",
-                        self.storage.get_sequence_len(),
-                        acc.ld
-                    );
-                }
                 self.storage.set_decided_len(acc.ld);
             }
         }
@@ -813,13 +793,6 @@ where
 
     fn handle_decide(&mut self, dec: Decide<R>) {
         if self.storage.get_promise() == dec.n && self.state.1 == Phase::Accept {
-            if self.storage.get_sequence_len() < dec.ld {
-                println!(
-                    "Got longer decided than log: la: {}, ld: {}",
-                    self.storage.get_sequence_len(),
-                    dec.ld
-                );
-            }
             self.storage.set_decided_len(dec.ld);
         }
     }
