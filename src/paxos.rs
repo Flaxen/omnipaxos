@@ -358,6 +358,14 @@ where
         if self.state.0 == Role::Leader {
             let idx = Self::get_idx_from_pid(from);
             self.lds[idx] = None;
+            #[cfg(feature = "batch_accept")]
+            {
+                self.batch_accept_meta[idx] = None;
+            }
+            #[cfg(feature = "latest_decide")]
+            {
+                self.latest_decide_meta[idx] = None;
+            }
             let ld = self.storage.get_decided_len();
             let n_accepted = self.storage.get_accepted_round();
             let la = self.storage.get_sequence_len();
@@ -605,7 +613,7 @@ where
 
     fn handle_promise_accept(&mut self, prom: Promise<R>, from: u64) {
         if prom.n == self.n_leader {
-            let idx = from as usize - 1;
+            let idx = Self::get_idx_from_pid(from);
             self.lds[idx] = Some(prom.ld);
             let PromiseMetaData {
                 n: max_round,
@@ -629,6 +637,11 @@ where
             let acc_sync = AcceptSync::with(self.n_leader.clone(), sfx, sync_idx);
             let msg = Message::with(self.pid, from, PaxosMsg::AcceptSync(acc_sync));
             self.outgoing.push(msg);
+            #[cfg(feature = "batch_accept")]
+            {
+                self.batch_accept_meta[idx] =
+                    Some((self.n_leader.clone(), self.outgoing.len() - 1));
+            }
             // inform what got decided already
             let ld = if self.lc > 0 {
                 self.lc
@@ -641,7 +654,6 @@ where
                     .push(Message::with(self.pid, from, PaxosMsg::Decide(d)));
                 #[cfg(feature = "latest_decide")]
                 {
-                    let idx = from as usize - 1;
                     let cached_idx = self.outgoing.len() - 1;
                     self.latest_decide_meta[idx] = Some((self.n_leader.clone(), cached_idx));
                 }
@@ -730,8 +742,7 @@ where
     }
 
     fn handle_acceptsync(&mut self, accsync: AcceptSync<R>, from: u64) {
-        if self.storage.get_promise() == accsync.n
-            && self.state == (Role::Follower, Phase::Prepare)
+        if self.storage.get_promise() == accsync.n && self.state == (Role::Follower, Phase::Prepare)
         {
             self.storage.set_accepted_round(accsync.n.clone());
             let mut entries = accsync.entries;
