@@ -752,13 +752,14 @@ where
         {
             self.storage.set_accepted_round(accsync.n.clone());
             let mut entries = accsync.entries;
+            let entries_len = entries.len();
             let la = self
                 .storage
                 .append_on_prefix(accsync.sync_idx, &mut entries);
             println!(
                 "Got AccSync. sync_idx: {}, entries_len: {}, la: {}",
                 accsync.sync_idx,
-                entries.len(),
+                entries_len,
                 la
             );
             self.state = (Role::Follower, Phase::Accept);
@@ -798,6 +799,13 @@ where
             self.accept_entries(acc.n, &mut entries);
             // handle decide
             if acc.ld > self.storage.get_decided_len() {
+                if self.storage.get_sequence_len() < acc.ld {
+                    println!(
+                        "Got longer decided than log in AcceptDecide: la: {}, ld: {}",
+                        self.storage.get_sequence_len(),
+                        acc.ld
+                    );
+                }
                 self.storage.set_decided_len(acc.ld);
             }
         }
